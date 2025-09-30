@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 type BlockType = 'grass' | 'dirt' | 'stone' | 'wood' | 'plank' | 'coal' | 'iron' | 'gold' | 'diamond' | 'air' | 'leaves' | 'crafting_table' | 'bedrock' | 'rails' | 'torch';
 type ToolType = 'hand' | 'wooden_pickaxe' | 'stone_pickaxe' | 'iron_pickaxe' | 'wooden_axe' | 'stone_axe' | 'sword';
+type FoodType = 'raw_beef' | 'cooked_beef' | 'raw_pork' | 'cooked_pork' | 'raw_chicken' | 'cooked_chicken' | 'raw_mutton' | 'cooked_mutton';
 type MobType = 'cow' | 'pig' | 'chicken' | 'sheep' | 'zombie' | 'skeleton' | 'creeper';
 
 interface Block {
@@ -16,9 +17,10 @@ interface Block {
 }
 
 interface Item {
-  type: BlockType | ToolType;
+  type: BlockType | ToolType | FoodType;
   count: number;
   isTool?: boolean;
+  isFood?: boolean;
 }
 
 interface Mob {
@@ -33,6 +35,8 @@ interface Player {
   x: number;
   y: number;
   direction: 'left' | 'right';
+  health: number;
+  hunger: number;
 }
 
 interface Recipe {
@@ -114,6 +118,38 @@ const mobNames: Record<MobType, string> = {
   zombie: '🧟',
   skeleton: '💀',
   creeper: '💥'
+};
+
+const foodNames: Record<FoodType, string> = {
+  raw_beef: 'Сырая говядина',
+  cooked_beef: 'Жареная говядина',
+  raw_pork: 'Сырая свинина',
+  cooked_pork: 'Жареная свинина',
+  raw_chicken: 'Сырая курица',
+  cooked_chicken: 'Жареная курица',
+  raw_mutton: 'Сырая баранина',
+  cooked_mutton: 'Жареная баранина'
+};
+
+const foodHealing: Record<FoodType, { health: number, hunger: number }> = {
+  raw_beef: { health: 5, hunger: 10 },
+  cooked_beef: { health: 15, hunger: 25 },
+  raw_pork: { health: 5, hunger: 10 },
+  cooked_pork: { health: 15, hunger: 25 },
+  raw_chicken: { health: 3, hunger: 8 },
+  cooked_chicken: { health: 10, hunger: 20 },
+  raw_mutton: { health: 4, hunger: 9 },
+  cooked_mutton: { health: 12, hunger: 22 }
+};
+
+const mobDrops: Record<MobType, FoodType | null> = {
+  cow: 'raw_beef',
+  pig: 'raw_pork',
+  chicken: 'raw_chicken',
+  sheep: 'raw_mutton',
+  zombie: null,
+  skeleton: null,
+  creeper: null
 };
 
 const recipes: Recipe[] = [
@@ -246,7 +282,7 @@ const generateVillage = (startX: number, surfaceY: number): Block[] => {
 export default function Index() {
   const [world, setWorld] = useState<Block[]>([]);
   const [mobs, setMobs] = useState<Mob[]>([]);
-  const [player, setPlayer] = useState<Player>({ x: 60, y: 26, direction: 'right' });
+  const [player, setPlayer] = useState<Player>({ x: 60, y: 26, direction: 'right', health: 100, hunger: 100 });
   const [cameraX, setCameraX] = useState(50);
   const [cameraY, setCameraY] = useState(15);
   const [inventory, setInventory] = useState<Item[]>([
@@ -266,11 +302,17 @@ export default function Index() {
     { type: 'iron_pickaxe', count: 0, isTool: true },
     { type: 'wooden_axe', count: 0, isTool: true },
     { type: 'stone_axe', count: 0, isTool: true },
-    { type: 'sword', count: 0, isTool: true }
+    { type: 'sword', count: 0, isTool: true },
+    { type: 'raw_beef', count: 0, isFood: true },
+    { type: 'cooked_beef', count: 0, isFood: true },
+    { type: 'raw_pork', count: 0, isFood: true },
+    { type: 'cooked_pork', count: 0, isFood: true },
+    { type: 'raw_chicken', count: 0, isFood: true },
+    { type: 'cooked_chicken', count: 0, isFood: true },
+    { type: 'raw_mutton', count: 0, isFood: true },
+    { type: 'cooked_mutton', count: 0, isFood: true }
   ]);
   const [selectedSlot, setSelectedSlot] = useState(0);
-  const [health, setHealth] = useState(100);
-  const [hunger, setHunger] = useState(100);
   const [time, setTime] = useState(0);
   const [isDay, setIsDay] = useState(true);
   const [showInventory, setShowInventory] = useState(false);
@@ -336,7 +378,7 @@ export default function Index() {
         if (mob.isHostile) {
           const distToPlayer = Math.abs(mob.x - player.x) + Math.abs(mob.y - player.y);
           if (distToPlayer < 2) {
-            setHealth(h => Math.max(0, h - 5));
+            setPlayer(p => ({ ...p, health: Math.max(0, p.health - 5) }));
           }
           if (mob.x < player.x) {
             return { ...mob, x: mob.x + 0.3 };
@@ -388,7 +430,7 @@ export default function Index() {
     if (!block || block.type !== 'air') return;
 
     const selectedItem = inventory[selectedSlot];
-    if (!selectedItem || selectedItem.count === 0 || selectedItem.isTool) return;
+    if (!selectedItem || selectedItem.count === 0 || selectedItem.isTool || selectedItem.isFood) return;
 
     setWorld(prev => {
       const existing = prev.find(b => b.x === x && b.y === y);
@@ -431,15 +473,6 @@ export default function Index() {
     }));
   };
 
-  const attackMob = (mob: Mob) => {
-    const tool = getCurrentTool();
-    const damage = tool === 'sword' ? 20 : 10;
-    
-    setMobs(prev => prev.map(m => 
-      m === mob ? { ...m, health: m.health - damage } : m
-    ).filter(m => m.health > 0));
-  };
-
   const movePlayer = (dx: number, dy: number) => {
     const newX = player.x + dx;
     const newY = player.y + dy;
@@ -447,10 +480,51 @@ export default function Index() {
     const blockAtPos = world.find(b => b.x === Math.floor(newX) && b.y === Math.floor(newY));
     if (!blockAtPos || blockAtPos.type === 'air' || blockAtPos.type === 'rails' || blockAtPos.type === 'torch') {
       const newDirection = dx < 0 ? 'left' : dx > 0 ? 'right' : player.direction;
-      setPlayer({ x: newX, y: newY, direction: newDirection });
+      setPlayer(p => ({ ...p, x: newX, y: newY, direction: newDirection }));
       setCameraX(newX);
       setCameraY(Math.floor(newY));
     }
+  };
+
+  const attackMob = () => {
+    const tool = getCurrentTool();
+    const damage = tool === 'sword' ? 30 : 10;
+    const attackRange = 2;
+    
+    setMobs(prev => prev.filter(mob => {
+      const dist = Math.sqrt(Math.pow(mob.x - player.x, 2) + Math.pow(mob.y - player.y, 2));
+      
+      if (dist < attackRange) {
+        mob.health -= damage;
+        
+        if (mob.health <= 0) {
+          const drop = mobDrops[mob.type];
+          if (drop) {
+            setInventory(inv => inv.map(item => 
+              item.type === drop ? { ...item, count: item.count + 1 } : item
+            ));
+          }
+          return false;
+        }
+      }
+      return true;
+    }));
+  };
+
+  const eatFood = () => {
+    const selectedItem = inventory[selectedSlot];
+    if (!selectedItem?.isFood || selectedItem.count === 0) return;
+    
+    const healing = foodHealing[selectedItem.type as FoodType];
+    setPlayer(p => ({
+      ...p,
+      health: Math.min(100, p.health + healing.health),
+      hunger: Math.min(100, p.hunger + healing.hunger)
+    }));
+    
+    setInventory(prev => prev.map((item, idx) => 
+      idx === selectedSlot ? { ...item, count: item.count - 1 } : item
+    ));
   };
 
   const visibleBlocks = world.filter(b => 
@@ -469,6 +543,8 @@ export default function Index() {
       if (e.key === 'ArrowDown' || e.key === 's') movePlayer(0, -1);
       if (e.key === 'e' || e.key === 'E') setShowInventory(prev => !prev);
       if (e.key >= '1' && e.key <= '9') setSelectedSlot(parseInt(e.key) - 1);
+      if (e.key === ' ') attackMob();
+      if (e.key === 'f' || e.key === 'F') eatFood();
     };
     
     window.addEventListener('keydown', handleKeyPress);
@@ -490,14 +566,14 @@ export default function Index() {
           <div className="flex gap-6 items-center bg-black/60 px-6 py-3 border-4 border-black">
             <div className="flex items-center gap-2">
               <Icon name="Heart" className="text-red-500" size={20} />
-              <Progress value={health} className="w-24 h-4" />
-              <span className="text-white text-xs">{health}</span>
+              <Progress value={player.health} className="w-24 h-4" />
+              <span className="text-white text-xs">{player.health}</span>
             </div>
             
             <div className="flex items-center gap-2">
               <Icon name="Drumstick" className="text-orange-500" size={20} />
-              <Progress value={hunger} className="w-24 h-4" />
-              <span className="text-white text-xs">{hunger}</span>
+              <Progress value={player.hunger} className="w-24 h-4" />
+              <span className="text-white text-xs">{player.hunger}</span>
             </div>
             
             <div className="flex items-center gap-2">
@@ -586,7 +662,7 @@ export default function Index() {
                   {inventory[selectedSlot].isTool ? (
                     inventory[selectedSlot].type.includes('pickaxe') ? '⛏️' : 
                     inventory[selectedSlot].type === 'sword' ? '⚔️' : '🪓'
-                  ) : (
+                  ) : inventory[selectedSlot].isFood ? '🍖' : (
                     inventory[selectedSlot].type === 'torch' ? '🔥' : '📦'
                   )}
                 </div>
@@ -605,7 +681,7 @@ export default function Index() {
                   left: `${gridX * 40 + 8}px`,
                   bottom: `${(20 - gridY) * 40 + 8}px`
                 }}
-                onClick={() => attackMob(mob)}
+                onClick={() => attackMob()}
               >
                 {mobNames[mob.type]}
               </button>
@@ -618,15 +694,20 @@ export default function Index() {
             {inventory.slice(0, 9).map((item, idx) => (
               <button
                 key={idx}
-                className={`w-16 h-16 ${item.isTool ? 'bg-gray-700' : blockColors[item.type as BlockType]} border-4 transition-all hover:scale-105 relative ${
+                className={`w-16 h-16 ${item.isTool ? 'bg-gray-700' : item.isFood ? 'bg-amber-700' : blockColors[item.type as BlockType]} border-4 transition-all hover:scale-105 relative ${
                   selectedSlot === idx ? 'border-white' : 'border-gray-600'
                 }`}
                 onClick={() => setSelectedSlot(idx)}
-                title={item.isTool ? toolNames[item.type as ToolType] : blockNames[item.type as BlockType]}
+                title={item.isTool ? toolNames[item.type as ToolType] : item.isFood ? foodNames[item.type as FoodType] : blockNames[item.type as BlockType]}
               >
                 {item.isTool && (
                   <div className="text-xl absolute inset-0 flex items-center justify-center">
                     {item.type.includes('pickaxe') ? '⛏️' : item.type === 'sword' ? '⚔️' : '🪓'}
+                  </div>
+                )}
+                {item.isFood && (
+                  <div className="text-xl absolute inset-0 flex items-center justify-center">
+                    🍖
                   </div>
                 )}
                 {item.count > 0 && (
@@ -657,7 +738,7 @@ export default function Index() {
               <TabsContent value="inventory" className="mt-4">
                 <div className="grid grid-cols-9 gap-2">
                   {inventory.map((item, idx) => (
-                    <Card key={idx} className={`${item.isTool ? 'bg-gray-700' : blockColors[item.type as BlockType]} p-4 border-4 border-black relative h-20`}>
+                    <Card key={idx} className={`${item.isTool ? 'bg-gray-700' : item.isFood ? 'bg-amber-700' : blockColors[item.type as BlockType]} p-4 border-4 border-black relative h-20`}>
                       <div className="text-white text-xs text-center drop-shadow-[0_1px_2px_rgba(0,0,0,1)]">
                         {item.isTool ? (
                           <>
@@ -665,6 +746,11 @@ export default function Index() {
                               {item.type.includes('pickaxe') ? '⛏️' : item.type === 'sword' ? '⚔️' : '🪓'}
                             </div>
                             {toolNames[item.type as ToolType].split(' ')[0]}
+                          </>
+                        ) : item.isFood ? (
+                          <>
+                            <div className="text-xl mb-1">🍖</div>
+                            {foodNames[item.type as FoodType].split(' ')[0]}
                           </>
                         ) : (
                           blockNames[item.type as BlockType]
@@ -730,8 +816,9 @@ export default function Index() {
 
         <Card className="p-4 bg-black/80 border-4 border-black">
           <div className="text-white text-xs space-y-1">
-            <p>🎮 WASD / Стрелки - движение | E - инвентарь | 1-9 - выбор слота</p>
-            <p>🖱️ ЛКМ - добыть | Shift + ЛКМ - поставить | Клик по мобу - атака</p>
+            <p>🎮 WASD / Стрелки - движение | E - инвентарь | 1-9 - выбор слота | F - съесть</p>
+            <p>🖱️ ЛКМ - добыть | Shift + ЛКМ - поставить | Пробел - атака</p>
+            <p>🍖 Охоться на животных для еды! Еда восстанавливает здоровье и голод!</p>
             <p>⛏️ Камера следует за игроком | 🏘️ Ищи деревни и шахты под землёй!</p>
             <p>⚔️ Враги атакуют ночью и наносят урон! Создай меч для защиты!</p>
           </div>
