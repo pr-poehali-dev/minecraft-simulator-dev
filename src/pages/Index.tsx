@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 type BlockType = 'grass' | 'dirt' | 'stone' | 'wood' | 'plank' | 'coal' | 'iron' | 'gold' | 'diamond' | 'air' | 'leaves' | 'crafting_table' | 'bedrock' | 'rails' | 'torch';
 type ToolType = 'hand' | 'wooden_pickaxe' | 'stone_pickaxe' | 'iron_pickaxe' | 'wooden_axe' | 'stone_axe' | 'sword';
-type MobType = 'cow' | 'pig' | 'zombie' | 'skeleton' | 'creeper';
+type MobType = 'cow' | 'pig' | 'chicken' | 'sheep' | 'zombie' | 'skeleton' | 'creeper';
 
 interface Block {
   type: BlockType;
@@ -32,6 +32,7 @@ interface Mob {
 interface Player {
   x: number;
   y: number;
+  direction: 'left' | 'right';
 }
 
 interface Recipe {
@@ -108,6 +109,8 @@ const toolNames: Record<ToolType, string> = {
 const mobNames: Record<MobType, string> = {
   cow: '🐄',
   pig: '🐷',
+  chicken: '🐔',
+  sheep: '🐑',
   zombie: '🧟',
   skeleton: '💀',
   creeper: '💥'
@@ -243,7 +246,7 @@ const generateVillage = (startX: number, surfaceY: number): Block[] => {
 export default function Index() {
   const [world, setWorld] = useState<Block[]>([]);
   const [mobs, setMobs] = useState<Mob[]>([]);
-  const [player, setPlayer] = useState<Player>({ x: 60, y: 26 });
+  const [player, setPlayer] = useState<Player>({ x: 60, y: 26, direction: 'right' });
   const [cameraX, setCameraX] = useState(50);
   const [cameraY, setCameraY] = useState(15);
   const [inventory, setInventory] = useState<Item[]>([
@@ -277,13 +280,16 @@ export default function Index() {
     const initialWorld = generateWorld(0);
     const village1 = generateVillage(80, 25);
     const village2 = generateVillage(150, 25);
-    setWorld([...initialWorld, ...village1, ...village2]);
+    const village3 = generateVillage(20, 25);
+    const village4 = generateVillage(180, 25);
+    setWorld([...initialWorld, ...village1, ...village2, ...village3, ...village4]);
     
     const initialMobs: Mob[] = [];
-    for (let i = 0; i < 8; i++) {
+    const animalTypes: MobType[] = ['cow', 'pig', 'chicken', 'sheep'];
+    for (let i = 0; i < 20; i++) {
       initialMobs.push({
-        type: Math.random() > 0.5 ? 'cow' : 'pig',
-        x: 70 + i * 15,
+        type: animalTypes[Math.floor(Math.random() * animalTypes.length)],
+        x: 30 + i * 8,
         y: 26,
         health: 10,
         isHostile: false
@@ -440,7 +446,8 @@ export default function Index() {
     
     const blockAtPos = world.find(b => b.x === Math.floor(newX) && b.y === Math.floor(newY));
     if (!blockAtPos || blockAtPos.type === 'air' || blockAtPos.type === 'rails' || blockAtPos.type === 'torch') {
-      setPlayer({ x: newX, y: newY });
+      const newDirection = dx < 0 ? 'left' : dx > 0 ? 'right' : player.direction;
+      setPlayer({ x: newX, y: newY, direction: newDirection });
       setCameraX(newX);
       setCameraY(Math.floor(newY));
     }
@@ -555,13 +562,36 @@ export default function Index() {
           </div>
           
           <div 
-            className="absolute text-3xl z-10 transition-all"
+            className="absolute z-10 transition-all"
             style={{
-              left: `${(player.x - (cameraX - 12)) * 40 + 6}px`,
-              bottom: `${(20 - (player.y - (cameraY - 10))) * 40 + 4}px`
+              left: `${(player.x - (cameraX - 12)) * 40}px`,
+              bottom: `${(20 - (player.y - (cameraY - 10))) * 40}px`,
+              width: '40px',
+              height: '40px'
             }}
           >
-            🧍
+            <div className="relative w-full h-full">
+              <div className="text-3xl absolute" style={{
+                transform: player.direction === 'left' ? 'scaleX(-1)' : 'scaleX(1)',
+                left: player.direction === 'left' ? '8px' : '2px'
+              }}>
+                🧍
+              </div>
+              {inventory[selectedSlot]?.count > 0 && (
+                <div className="text-lg absolute" style={{
+                  right: player.direction === 'right' ? '-8px' : 'auto',
+                  left: player.direction === 'left' ? '-8px' : 'auto',
+                  bottom: '8px'
+                }}>
+                  {inventory[selectedSlot].isTool ? (
+                    inventory[selectedSlot].type.includes('pickaxe') ? '⛏️' : 
+                    inventory[selectedSlot].type === 'sword' ? '⚔️' : '🪓'
+                  ) : (
+                    inventory[selectedSlot].type === 'torch' ? '🔥' : '📦'
+                  )}
+                </div>
+              )}
+            </div>
           </div>
           
           {visibleMobs.map((mob, idx) => {
