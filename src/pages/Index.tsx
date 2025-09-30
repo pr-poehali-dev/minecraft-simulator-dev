@@ -5,8 +5,8 @@ import Icon from '@/components/ui/icon';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
-type BlockType = 'grass' | 'dirt' | 'stone' | 'wood' | 'plank' | 'coal' | 'iron' | 'gold' | 'diamond' | 'air' | 'leaves' | 'crafting_table' | 'bedrock';
-type ToolType = 'hand' | 'wooden_pickaxe' | 'stone_pickaxe' | 'iron_pickaxe' | 'wooden_axe' | 'stone_axe';
+type BlockType = 'grass' | 'dirt' | 'stone' | 'wood' | 'plank' | 'coal' | 'iron' | 'gold' | 'diamond' | 'air' | 'leaves' | 'crafting_table' | 'bedrock' | 'rails' | 'torch';
+type ToolType = 'hand' | 'wooden_pickaxe' | 'stone_pickaxe' | 'iron_pickaxe' | 'wooden_axe' | 'stone_axe' | 'sword';
 type MobType = 'cow' | 'pig' | 'zombie' | 'skeleton' | 'creeper';
 
 interface Block {
@@ -29,6 +29,11 @@ interface Mob {
   isHostile: boolean;
 }
 
+interface Player {
+  x: number;
+  y: number;
+}
+
 interface Recipe {
   result: BlockType | ToolType;
   ingredients: { type: BlockType | ToolType; count: number }[];
@@ -49,6 +54,8 @@ const blockColors: Record<BlockType, string> = {
   leaves: 'bg-[#228B22]/70',
   crafting_table: 'bg-[#8B4513]',
   bedrock: 'bg-[#1a1a1a]',
+  rails: 'bg-[#4a4a4a]',
+  torch: 'bg-[#8B4513]',
   air: 'bg-transparent'
 };
 
@@ -64,6 +71,8 @@ const blockHardness: Record<BlockType, { tool: ToolType[], time: number }> = {
   diamond: { tool: ['iron_pickaxe'], time: 3 },
   leaves: { tool: ['hand'], time: 0.3 },
   crafting_table: { tool: ['hand'], time: 0.5 },
+  rails: { tool: ['hand'], time: 0.5 },
+  torch: { tool: ['hand'], time: 0.1 },
   bedrock: { tool: [], time: 999 },
   air: { tool: ['hand'], time: 0 }
 };
@@ -81,6 +90,8 @@ const blockNames: Record<BlockType, string> = {
   leaves: 'Листва',
   crafting_table: 'Верстак',
   bedrock: 'Коренная порода',
+  rails: 'Рельсы',
+  torch: 'Факел',
   air: 'Воздух'
 };
 
@@ -90,7 +101,8 @@ const toolNames: Record<ToolType, string> = {
   stone_pickaxe: 'Каменная кирка',
   iron_pickaxe: 'Железная кирка',
   wooden_axe: 'Деревянный топор',
-  stone_axe: 'Каменный топор'
+  stone_axe: 'Каменный топор',
+  sword: 'Меч'
 };
 
 const mobNames: Record<MobType, string> = {
@@ -109,17 +121,55 @@ const recipes: Recipe[] = [
   { result: 'stone_pickaxe', ingredients: [{ type: 'stone', count: 3 }, { type: 'wood', count: 2 }], resultCount: 1, requiresCraftingTable: true },
   { result: 'stone_axe', ingredients: [{ type: 'stone', count: 3 }, { type: 'wood', count: 2 }], resultCount: 1, requiresCraftingTable: true },
   { result: 'iron_pickaxe', ingredients: [{ type: 'iron', count: 3 }, { type: 'wood', count: 2 }], resultCount: 1, requiresCraftingTable: true },
+  { result: 'sword', ingredients: [{ type: 'iron', count: 2 }, { type: 'wood', count: 1 }], resultCount: 1, requiresCraftingTable: true },
+  { result: 'torch', ingredients: [{ type: 'coal', count: 1 }, { type: 'wood', count: 1 }], resultCount: 4 },
 ];
+
+const generateCave = (startX: number, startY: number, length: number): Block[] => {
+  const blocks: Block[] = [];
+  let x = startX;
+  let y = startY;
+  
+  for (let i = 0; i < length; i++) {
+    for (let r = -2; r <= 2; r++) {
+      blocks.push({ type: 'air', x: x + Math.floor(Math.random() * 2), y: y + r });
+    }
+    x += Math.random() > 0.5 ? 1 : 0;
+    y += Math.floor(Math.random() * 3) - 1;
+    y = Math.max(3, Math.min(15, y));
+  }
+  
+  return blocks;
+};
+
+const generateMine = (startX: number, startY: number): Block[] => {
+  const blocks: Block[] = [];
+  
+  for (let i = 0; i < 15; i++) {
+    blocks.push({ type: 'air', x: startX + i, y: startY });
+    blocks.push({ type: 'air', x: startX + i, y: startY + 1 });
+    if (i % 3 === 0) {
+      blocks.push({ type: 'rails', x: startX + i, y: startY });
+      blocks.push({ type: 'torch', x: startX + i, y: startY + 1 });
+    }
+  }
+  
+  for (let v = 0; v < 8; v++) {
+    blocks.push({ type: 'air', x: startX, y: startY - v });
+  }
+  
+  return blocks;
+};
 
 const generateWorld = (offsetX: number): Block[] => {
   const blocks: Block[] = [];
-  const worldHeight = 30;
-  const worldWidth = 100;
+  const worldHeight = 40;
+  const worldWidth = 200;
   
   for (let x = offsetX; x < offsetX + worldWidth; x++) {
     blocks.push({ type: 'bedrock', x, y: 0 });
     
-    const surfaceHeight = 20 + Math.floor(Math.sin(x * 0.1) * 3);
+    const surfaceHeight = 25 + Math.floor(Math.sin(x * 0.1) * 3);
     
     for (let y = 1; y < worldHeight; y++) {
       if (y > surfaceHeight) {
@@ -129,10 +179,10 @@ const generateWorld = (offsetX: number): Block[] => {
       } else if (y > surfaceHeight - 3) {
         blocks.push({ type: 'dirt', x, y });
       } else if (y > 2) {
-        if (Math.random() > 0.95) {
+        if (Math.random() > 0.96) {
           if (y < 5) {
             blocks.push({ type: Math.random() > 0.5 ? 'diamond' : 'gold', x, y });
-          } else if (y < 10) {
+          } else if (y < 12) {
             blocks.push({ type: Math.random() > 0.5 ? 'iron' : 'gold', x, y });
           } else {
             blocks.push({ type: 'coal', x, y });
@@ -145,7 +195,7 @@ const generateWorld = (offsetX: number): Block[] => {
       }
     }
     
-    if (Math.random() > 0.95 && x % 5 === 0) {
+    if (Math.random() > 0.96 && x % 5 === 0) {
       const treeHeight = 4 + Math.floor(Math.random() * 2);
       for (let h = 0; h < treeHeight; h++) {
         blocks.push({ type: 'wood', x, y: surfaceHeight + 1 + h });
@@ -158,26 +208,44 @@ const generateWorld = (offsetX: number): Block[] => {
     }
   }
   
-  return blocks;
+  const cave1 = generateCave(30, 12, 40);
+  const cave2 = generateCave(100, 10, 50);
+  const cave3 = generateCave(160, 8, 45);
+  
+  const mine1 = generateMine(50, 8);
+  const mine2 = generateMine(120, 6);
+  
+  return [...blocks, ...cave1, ...cave2, ...cave3, ...mine1, ...mine2];
 };
 
 const generateVillage = (startX: number, surfaceY: number): Block[] => {
   const blocks: Block[] = [];
-  for (let hx = 0; hx < 6; hx++) {
-    for (let hy = 0; hy < 4; hy++) {
-      if (hy === 0 || hx === 0 || hx === 5) {
-        blocks.push({ type: 'plank', x: startX + hx, y: surfaceY + 1 + hy });
+  
+  for (let house = 0; house < 3; house++) {
+    const houseX = startX + house * 10;
+    for (let hx = 0; hx < 6; hx++) {
+      for (let hy = 0; hy < 5; hy++) {
+        if (hy === 0 || hy === 4 || hx === 0 || hx === 5) {
+          blocks.push({ type: 'plank', x: houseX + hx, y: surfaceY + 1 + hy });
+        }
       }
     }
+    blocks.push({ type: 'crafting_table', x: houseX + 2, y: surfaceY + 1 });
+    
+    for (let i = 0; i < 3; i++) {
+      blocks.push({ type: 'torch', x: houseX + i * 2, y: surfaceY + 3 });
+    }
   }
-  blocks.push({ type: 'crafting_table', x: startX + 2, y: surfaceY + 1 });
+  
   return blocks;
 };
 
 export default function Index() {
   const [world, setWorld] = useState<Block[]>([]);
   const [mobs, setMobs] = useState<Mob[]>([]);
+  const [player, setPlayer] = useState<Player>({ x: 60, y: 26 });
   const [cameraX, setCameraX] = useState(50);
+  const [cameraY, setCameraY] = useState(15);
   const [inventory, setInventory] = useState<Item[]>([
     { type: 'grass', count: 0 },
     { type: 'dirt', count: 0 },
@@ -189,11 +257,13 @@ export default function Index() {
     { type: 'gold', count: 0 },
     { type: 'diamond', count: 0 },
     { type: 'crafting_table', count: 0 },
+    { type: 'torch', count: 0 },
     { type: 'wooden_pickaxe', count: 0, isTool: true },
     { type: 'stone_pickaxe', count: 0, isTool: true },
     { type: 'iron_pickaxe', count: 0, isTool: true },
     { type: 'wooden_axe', count: 0, isTool: true },
-    { type: 'stone_axe', count: 0, isTool: true }
+    { type: 'stone_axe', count: 0, isTool: true },
+    { type: 'sword', count: 0, isTool: true }
   ]);
   const [selectedSlot, setSelectedSlot] = useState(0);
   const [health, setHealth] = useState(100);
@@ -205,15 +275,16 @@ export default function Index() {
 
   useEffect(() => {
     const initialWorld = generateWorld(0);
-    const village = generateVillage(70, 20);
-    setWorld([...initialWorld, ...village]);
+    const village1 = generateVillage(80, 25);
+    const village2 = generateVillage(150, 25);
+    setWorld([...initialWorld, ...village1, ...village2]);
     
     const initialMobs: Mob[] = [];
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 8; i++) {
       initialMobs.push({
         type: Math.random() > 0.5 ? 'cow' : 'pig',
-        x: 60 + i * 10,
-        y: 21,
+        x: 70 + i * 15,
+        y: 26,
         health: 10,
         isHostile: false
       });
@@ -231,12 +302,12 @@ export default function Index() {
         if (newTime === 120) {
           setMobs(prev => {
             const hostileMobs: Mob[] = [];
-            for (let i = 0; i < 3; i++) {
+            for (let i = 0; i < 5; i++) {
               const mobTypes: MobType[] = ['zombie', 'skeleton', 'creeper'];
               hostileMobs.push({
                 type: mobTypes[Math.floor(Math.random() * mobTypes.length)],
-                x: cameraX - 5 + Math.random() * 30,
-                y: 21,
+                x: player.x - 10 + Math.random() * 20,
+                y: 26,
                 health: 20,
                 isHostile: true
               });
@@ -249,17 +320,30 @@ export default function Index() {
       });
     }, 100);
     return () => clearInterval(timer);
-  }, [cameraX]);
+  }, [player.x]);
 
   useEffect(() => {
     const mobTimer = setInterval(() => {
-      setMobs(prev => prev.map(mob => ({
-        ...mob,
-        x: mob.x + (Math.random() - 0.5) * 2
-      })));
-    }, 1000);
+      setMobs(prev => prev.map(mob => {
+        const newX = mob.x + (Math.random() - 0.5) * 2;
+        
+        if (mob.isHostile) {
+          const distToPlayer = Math.abs(mob.x - player.x) + Math.abs(mob.y - player.y);
+          if (distToPlayer < 2) {
+            setHealth(h => Math.max(0, h - 5));
+          }
+          if (mob.x < player.x) {
+            return { ...mob, x: mob.x + 0.3 };
+          } else {
+            return { ...mob, x: mob.x - 0.3 };
+          }
+        }
+        
+        return { ...mob, x: newX };
+      }));
+    }, 500);
     return () => clearInterval(mobTimer);
-  }, []);
+  }, [player]);
 
   const getCurrentTool = (): ToolType => {
     const selectedItem = inventory[selectedSlot];
@@ -342,26 +426,47 @@ export default function Index() {
   };
 
   const attackMob = (mob: Mob) => {
+    const tool = getCurrentTool();
+    const damage = tool === 'sword' ? 20 : 10;
+    
     setMobs(prev => prev.map(m => 
-      m === mob ? { ...m, health: m.health - 10 } : m
+      m === mob ? { ...m, health: m.health - damage } : m
     ).filter(m => m.health > 0));
   };
 
-  const moveCamera = (direction: 'left' | 'right' | 'down') => {
-    setCameraX(prev => {
-      if (direction === 'left') return Math.max(10, prev - 5);
-      if (direction === 'right') return Math.min(140, prev + 5);
-      return prev;
-    });
+  const movePlayer = (dx: number, dy: number) => {
+    const newX = player.x + dx;
+    const newY = player.y + dy;
+    
+    const blockAtPos = world.find(b => b.x === Math.floor(newX) && b.y === Math.floor(newY));
+    if (!blockAtPos || blockAtPos.type === 'air' || blockAtPos.type === 'rails' || blockAtPos.type === 'torch') {
+      setPlayer({ x: newX, y: newY });
+      setCameraX(newX);
+      setCameraY(Math.floor(newY));
+    }
   };
 
   const visibleBlocks = world.filter(b => 
-    b.x >= cameraX - 10 && b.x < cameraX + 15 && b.y >= 10 && b.y < 30
+    b.x >= cameraX - 12 && b.x < cameraX + 13 && b.y >= cameraY - 10 && b.y < cameraY + 10
   );
 
   const visibleMobs = mobs.filter(m => 
-    m.x >= cameraX - 10 && m.x < cameraX + 15
+    m.x >= cameraX - 12 && m.x < cameraX + 13 && m.y >= cameraY - 10 && m.y < cameraY + 10
   );
+
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft' || e.key === 'a') movePlayer(-1, 0);
+      if (e.key === 'ArrowRight' || e.key === 'd') movePlayer(1, 0);
+      if (e.key === 'ArrowUp' || e.key === 'w') movePlayer(0, 1);
+      if (e.key === 'ArrowDown' || e.key === 's') movePlayer(0, -1);
+      if (e.key === 'e' || e.key === 'E') setShowInventory(prev => !prev);
+      if (e.key >= '1' && e.key <= '9') setSelectedSlot(parseInt(e.key) - 1);
+    };
+    
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [player]);
 
   return (
     <div className="min-h-screen p-4" style={{
@@ -395,26 +500,14 @@ export default function Index() {
           </div>
         </div>
 
-        <div className="flex gap-2 justify-center">
-          <Button onClick={() => moveCamera('left')} size="sm" className="border-4 border-black">
-            <Icon name="ChevronLeft" size={20} />
-          </Button>
-          <Button onClick={() => moveCamera('right')} size="sm" className="border-4 border-black">
-            <Icon name="ChevronRight" size={20} />
-          </Button>
-          <Button onClick={() => moveCamera('down')} size="sm" className="border-4 border-black">
-            <Icon name="ChevronDown" size={20} />
-          </Button>
-        </div>
-
         <Card className="p-6 bg-[#87CEEB]/90 border-4 border-black overflow-hidden relative">
           <div className="grid gap-0" style={{
             gridTemplateColumns: 'repeat(25, 40px)',
             gridTemplateRows: 'repeat(20, 40px)'
           }}>
             {visibleBlocks.map((block, idx) => {
-              const gridX = block.x - (cameraX - 10);
-              const gridY = block.y - 10;
+              const gridX = block.x - (cameraX - 12);
+              const gridY = block.y - (cameraY - 10);
               return (
                 <button
                   key={idx}
@@ -450,18 +543,34 @@ export default function Index() {
                   {block.type === 'crafting_table' && (
                     <div className="text-xs absolute inset-0 flex items-center justify-center">🔨</div>
                   )}
+                  {block.type === 'rails' && (
+                    <div className="text-xs absolute inset-0 flex items-center justify-center">═</div>
+                  )}
+                  {block.type === 'torch' && (
+                    <div className="text-xs absolute inset-0 flex items-center justify-center">🔥</div>
+                  )}
                 </button>
               );
             })}
           </div>
           
+          <div 
+            className="absolute text-3xl z-10 transition-all"
+            style={{
+              left: `${(player.x - (cameraX - 12)) * 40 + 6}px`,
+              bottom: `${(20 - (player.y - (cameraY - 10))) * 40 + 4}px`
+            }}
+          >
+            🧍
+          </div>
+          
           {visibleMobs.map((mob, idx) => {
-            const gridX = Math.floor(mob.x) - (cameraX - 10);
-            const gridY = mob.y - 10;
+            const gridX = Math.floor(mob.x) - (cameraX - 12);
+            const gridY = Math.floor(mob.y) - (cameraY - 10);
             return (
               <button
                 key={idx}
-                className="absolute text-2xl hover:scale-110 transition-transform"
+                className="absolute text-2xl hover:scale-110 transition-transform z-10"
                 style={{
                   left: `${gridX * 40 + 8}px`,
                   bottom: `${(20 - gridY) * 40 + 8}px`
@@ -487,7 +596,7 @@ export default function Index() {
               >
                 {item.isTool && (
                   <div className="text-xl absolute inset-0 flex items-center justify-center">
-                    {item.type.includes('pickaxe') ? '⛏️' : '🪓'}
+                    {item.type.includes('pickaxe') ? '⛏️' : item.type === 'sword' ? '⚔️' : '🪓'}
                   </div>
                 )}
                 {item.count > 0 && (
@@ -522,7 +631,9 @@ export default function Index() {
                       <div className="text-white text-xs text-center drop-shadow-[0_1px_2px_rgba(0,0,0,1)]">
                         {item.isTool ? (
                           <>
-                            <div className="text-xl mb-1">{item.type.includes('pickaxe') ? '⛏️' : '🪓'}</div>
+                            <div className="text-xl mb-1">
+                              {item.type.includes('pickaxe') ? '⛏️' : item.type === 'sword' ? '⚔️' : '🪓'}
+                            </div>
                             {toolNames[item.type as ToolType].split(' ')[0]}
                           </>
                         ) : (
@@ -561,6 +672,7 @@ export default function Index() {
                           <div className="flex items-center gap-2">
                             <div className={`w-12 h-12 ${blockColors[recipe.result as BlockType] || 'bg-gray-700'} border-2 border-black flex items-center justify-center`}>
                               {typeof recipe.result === 'string' && recipe.result.includes('pickaxe') && '⛏️'}
+                              {typeof recipe.result === 'string' && recipe.result === 'sword' && '⚔️'}
                               {typeof recipe.result === 'string' && recipe.result.includes('axe') && !recipe.result.includes('pickaxe') && '🪓'}
                             </div>
                             <span className="text-xs">x{recipe.resultCount}</span>
@@ -588,9 +700,10 @@ export default function Index() {
 
         <Card className="p-4 bg-black/80 border-4 border-black">
           <div className="text-white text-xs space-y-1">
+            <p>🎮 WASD / Стрелки - движение | E - инвентарь | 1-9 - выбор слота</p>
             <p>🖱️ ЛКМ - добыть | Shift + ЛКМ - поставить | Клик по мобу - атака</p>
-            <p>⛏️ Руда требует кирку: камень - дерев. кирка, железо - камен. кирка, алмаз - желез. кирка</p>
-            <p>🌍 Стрелки - перемещение по миру | 🏘️ Ищи деревни с верстаками!</p>
+            <p>⛏️ Камера следует за игроком | 🏘️ Ищи деревни и шахты под землёй!</p>
+            <p>⚔️ Враги атакуют ночью и наносят урон! Создай меч для защиты!</p>
           </div>
         </Card>
       </div>
